@@ -1,9 +1,9 @@
 name: Crowd feed
-# Every hour a job watches the Makkah live camera for ~55 minutes (see feed.py) and publishes the
+# Every 20 min a job is queued; each watches the Makkah live camera for ~55 minutes (see feed.py) and publishes the
 # latest Kaaba view + crowd reading to the `feed` branch, which the Umrah Companion app reads.
 on:
   schedule:
-    - cron: "2 * * * *"
+    - cron: "*/20 * * * *"   # GitHub often starts these late; runs queue behind each other (concurrency), so there are no gaps
   workflow_dispatch:
 concurrency:
   group: feed

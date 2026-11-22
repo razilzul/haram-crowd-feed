@@ -9,14 +9,14 @@ Kaaba we measure the crowd and publish to the `feed` branch:
   latest.json  {"at": <unix s when seen>, "crowd": 0-1, "level": ..., "camera_at": <last camera check>}
   log.json     every reading of the last 14 days: [[unix s, crowd], ...] (the app plots today's)
 """
-import collections, hashlib, io, json, os, subprocess, sys, time, urllib.request
+import collections, hashlib, re, io, json, os, subprocess, sys, time, urllib.request
 from PIL import Image
 import analyze as A
 
 VIDEO = os.environ.get("LIVE_VIDEO", "IsJTAdC3-Jw")   # Saudi Quran TV, Makkah Live
 CHANNEL = "UCos52azQNBgW63_9uDJoPDA"
 CHECK = 60                                             # seconds between thumbnail checks
-RUN_FOR = int(os.environ.get("RUN_FOR", 3300))        # one job = 55 min; the workflow starts one hourly
+RUN_FOR = int(os.environ.get("RUN_FOR", 3300))        # one job = 55 min; the workflow queues the next
 OUT = sys.argv[1] if len(sys.argv) > 1 else "out"     # checkout of the feed branch
 KEEP = 14 * 86400
 # Only for the family's trip (24 Nov - 6 Dec 2026): after this Makkah date the job does nothing.
@@ -31,16 +31,25 @@ def fetch(url, tries=3):
             err = e; time.sleep(3)
     raise err
 
-def live_video():
-    # The channel's /live page names the current stream; fall back to the known one.
+def thumb(vid, host="i"):
+    return fetch(f"https://{host}.ytimg.com/vi/{vid}/maxresdefault_live.jpg")
+
+def live_video(current=VIDEO):
+    # Keep the current stream while its thumbnail works. Otherwise ask the channel's /live page, whose
+    # canonical link names the stream (other videoIds on that page are suggestions), and only switch
+    # to a video whose live thumbnail actually exists.
     try:
-        html = fetch(f"https://www.youtube.com/channel/{CHANNEL}/live").decode("utf8", "ignore")
-        i = html.find('"videoId":"')
-        if i > 0 and '"isLive":true' in html:
-            return html[i + 11:i + 22]
+        thumb(current, "i"); return current
     except Exception:
         pass
-    return VIDEO
+    try:
+        html = fetch(f"https://www.youtube.com/channel/{CHANNEL}/live").decode("utf8", "ignore")
+        m = re.search(r'<link rel="canonical" href="https://www\.youtube\.com/watch\?v=([\w-]{11})"', html)
+        if m:
+            thumb(m.group(1), "i"); return m.group(1)
+    except Exception as e:
+        print("live lookup failed", e, flush=True)
+    return current
 
 def load_json(name, default):
     try:
@@ -72,20 +81,20 @@ def main():
     while time.time() - start < RUN_FOR:
         host = ["i", "i1", "i2", "i3", "i4"][n % 5]; n += 1
         try:
-            raw = fetch(f"https://{host}.ytimg.com/vi/{vid}/maxresdefault_live.jpg")
+            raw = thumb(vid, host)
         except Exception as e:
-            print("fetch failed", e, flush=True); vid = live_video(); time.sleep(CHECK); continue
+            print("fetch failed", host, e, flush=True); vid = live_video(vid); time.sleep(CHECK); continue
         h = hashlib.md5(raw).hexdigest()
         now = int(time.time())
         if h not in seen:
             seen.append(h)
             im = Image.open(io.BytesIO(raw)).convert("RGB")
             if im.width <= 120:                      # YouTube's "no thumbnail" placeholder
-                vid = live_video(); time.sleep(CHECK); continue
+                vid = live_video(vid); time.sleep(CHECK); continue
             L, S = A.load_image(im)
             k = A.kaaba(L, S)
             c = A.crowd(L, S, k["box"]) if k else None
-            print(time.strftime("%H:%M:%S"), "kaaba" if k else "other angle", c, flush=True)
+            print(time.strftime("%H:%M:%S"), host, h[:8], "kaaba" if k else "other angle", c, flush=True)
             if k and c is not None:
                 im.resize((960, 540), Image.LANCZOS).save(os.path.join(OUT, "kaaba.jpg"), quality=78, optimize=True)
                 latest = {"at": now, "crowd": c, "level": A.level(c), "video": vid}

@@ -1,15 +1,17 @@
 name: Crowd feed
-# Every 20 min a job is queued; each watches the Makkah live camera for ~55 minutes (see feed.py) and publishes the
+# Each run watches the Makkah live camera for ~55 minutes (see feed.py) and publishes the
 # latest Kaaba view + crowd reading to the `feed` branch, which the Umrah Companion app reads.
+# Each run starts the next one when it ends (GitHub's cron is unreliable); the cron only restarts the chain if it breaks.
 on:
   schedule:
-    - cron: "*/20 * * * *"   # GitHub often starts these late; runs queue behind each other (concurrency), so there are no gaps
+    - cron: "*/30 * * * *"   # backup only; with the concurrency group at most one run waits behind the running one
   workflow_dispatch:
 concurrency:
   group: feed
   cancel-in-progress: false
 permissions:
   contents: write
+  actions: write
 jobs:
   watch:
     runs-on: ubuntu-latest
@@ -34,4 +36,11 @@ jobs:
           fi
       - run: python feed.py out
         env:
-          RUN_FOR: ${{ github.event_name == 'workflow_dispatch' && '900' || '3300' }}
+          RUN_FOR: "3300"
+      - name: Start the next run (until the trip ends)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(TZ=Asia/Riyadh date +%F)" \> "2026-12-07" ]; then echo "Trip over, not continuing"; exit 0; fi
+          gh workflow run feed.yml -R "${{ github.repository }}" --ref main

@@ -15,3 +15,5 @@ Read by the Umrah Companion app's Crowds tab. Runs only until 7 Dec 2026 (`STOP_
 Why thumbnails, not video: YouTube asks cloud servers to sign in before streaming video, but the
 live thumbnail (`maxresdefault_live.jpg`) stays open. It updates about every 5 minutes, so the job
 checks once a minute.
+
+To stop it early: Actions → Crowd feed → "Disable workflow" (each run starts the next, so cancelling one run is not enough).

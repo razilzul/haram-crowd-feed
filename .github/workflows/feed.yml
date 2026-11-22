@@ -1,0 +1,37 @@
+name: Crowd feed
+# Every hour a job watches the Makkah live camera for ~55 minutes (see feed.py) and publishes the
+# latest Kaaba view + crowd reading to the `feed` branch, which the Umrah Companion app reads.
+on:
+  schedule:
+    - cron: "2 * * * *"
+  workflow_dispatch:
+concurrency:
+  group: feed
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet pillow numpy
+      - name: Check out the feed branch (or start it)
+        run: |
+          git config --global user.name "crowd-feed-bot"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          url="https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          if git ls-remote --exit-code --heads "$url" feed >/dev/null; then
+            git clone --quiet --depth 1 --branch feed "$url" out
+          else
+            mkdir out && cd out && git init --quiet -b feed && git remote add origin "$url" \
+              && echo "Output of the crowd feed workflow. Rewritten in place; see main for the code." > README.md \
+              && git add README.md && git commit --quiet -m "Start feed"
+          fi
+      - run: python feed.py out
+        env:
+          RUN_FOR: ${{ github.event_name == 'workflow_dispatch' && '900' || '3300' }}

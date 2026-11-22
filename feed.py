@@ -19,6 +19,8 @@ CHECK = 60                                             # seconds between thumbna
 RUN_FOR = int(os.environ.get("RUN_FOR", 3300))        # one job = 55 min; the workflow starts one hourly
 OUT = sys.argv[1] if len(sys.argv) > 1 else "out"     # checkout of the feed branch
 KEEP = 14 * 86400
+# Only for the family's trip (24 Nov - 6 Dec 2026): after this Makkah date the job does nothing.
+STOP_AFTER = os.environ.get("STOP_AFTER", "2026-12-07")
 
 def fetch(url, tries=3):
     for i in range(tries):
@@ -59,6 +61,8 @@ def publish(msg):
     g("push", "-f", "origin", "HEAD:feed")
 
 def main():
+    if time.strftime("%Y-%m-%d", time.gmtime(time.time() + 3 * 3600)) > STOP_AFTER:
+        print("past", STOP_AFTER, "- feed is off"); return
     start, vid, n = time.time(), live_video(), 0
     seen = collections.deque(maxlen=12)   # the hosts update at different times, so remember recent pictures
     told = 0                              # when we last published a plain "camera checked"
